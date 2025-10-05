@@ -2,125 +2,89 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name        "clevis">
   <!ENTITY author      "stokkes">
-  <!ENTITY version     "2025.10.04">
-  <!ENTITY repo        "clevis-unraid">
+  <!ENTITY version     "2025.10.04.2">
   <!ENTITY user        "stokkes">
+  <!ENTITY repo        "clevis-unraid">
   <!ENTITY branch      "main">
+  <!ENTITY baseURL     "https://github.com/&user;/&repo;/raw/&branch;">
   <!ENTITY pluginURL   "https://raw.githubusercontent.com/&user;/&repo;/&branch;/clevis.plg">
-  <!ENTITY appimageURL "https://raw.githubusercontent.com/&user;/&repo;/&branch;/Clevis-x86_64.AppImage">
-  <!ENTITY md5URL      "https://raw.githubusercontent.com/&user;/&repo;/&branch;/Clevis-x86_64.AppImage.md5">
   <!ENTITY readmeURL   "https://github.com/&user;/&repo;/blob/&branch;/README.md">
 ]>
-
-<PLUGIN  name="&name;"
-         author="&author;"
-         version="&version;"
-         pluginURL="&pluginURL;"
-         support="&readmeURL;"
-         min="6.9.0"
-         max="">
-
+<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" support="&readmeURL;" min="6.9.0">
   <CHANGES>
-    ### &version; - Initial release
-    - Installs Clevis AppImage and wrapper to /usr/local/bin
-    - Adds convenience symlinks for common clevis/jose commands
+    ### &version;
+    - Switch to `curl -L --fail` download (more reliable than `<FILE URL=...>`)
+    - Correct branch to `main`
   </CHANGES>
 
-  <!-- Stash files on the flash drive so they persist across reboots -->
-  <FILE Name="/boot/config/plugins/&name;/Clevis-x86_64.AppImage">
-    <URL>&appimageURL;</URL>
-  </FILE>
-
-  <FILE Name="/boot/config/plugins/&name;/Clevis-x86_64.AppImage.md5">
-    <URL>&md5URL;</URL>
-  </FILE>
-
-  <!-- Install step -->
+  <!-- Install -->
   <FILE Run="/bin/bash">
     <![CDATA[
 set -euo pipefail
 
 PLUGIN_NAME="&name;"
-APPIMAGE_SRC="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage"
-MD5_SRC="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage.md5"
+CACHE_DIR="/boot/config/plugins/${PLUGIN_NAME}"
 INSTALL_DIR="/usr/local/bin"
-APPIMAGE_DST="${INSTALL_DIR}/Clevis-x86_64.AppImage"
-WRAPPER="${INSTALL_DIR}/clevis"
+APPIMAGE_NAME="Clevis-x86_64.AppImage"
+APPIMAGE_URL="&baseURL;/${APPIMAGE_NAME}"
+MD5_URL="&baseURL;/${APPIMAGE_NAME}.md5"
+APPIMAGE_PATH="${CACHE_DIR}/${APPIMAGE_NAME}"
+MD5_PATH="${CACHE_DIR}/${APPIMAGE_NAME}.md5"
 
-echo "==> Installing ${PLUGIN_NAME}..."
+mkdir -p "$CACHE_DIR"
 
-# Basic checks
-if [[ ! -s "$APPIMAGE_SRC" ]]; then
-  echo "ERROR: AppImage not found at $APPIMAGE_SRC"
-  exit 1
-fi
-if [[ -s "$MD5_SRC" ]]; then
+echo "==> Downloading ${APPIMAGE_NAME}..."
+curl -L --fail --retry 3 --output "$APPIMAGE_PATH" "$APPIMAGE_URL"
+
+echo "==> Downloading MD5..."
+if curl -L --fail --retry 3 --output "$MD5_PATH" "$MD5_URL"; then
   echo "==> Verifying MD5..."
-  # md5 file typically contains "<md5sum>  <filename>"
-  # normalize: replace filename with our local path
-  SUM_EXPECTED="$(awk '{print $1}' "$MD5_SRC")"
-  SUM_ACTUAL="$(md5sum "$APPIMAGE_SRC" | awk '{print $1}')"
+  SUM_EXPECTED="$(awk '{print $1}' "$MD5_PATH")"
+  SUM_ACTUAL="$(md5sum "$APPIMAGE_PATH" | awk '{print $1}')"
   if [[ "$SUM_EXPECTED" != "$SUM_ACTUAL" ]]; then
-    echo "ERROR: MD5 mismatch for AppImage"
-    echo "Expected: $SUM_EXPECTED"
-    echo "Actual:   $SUM_ACTUAL"
-    exit 1
+    echo "ERROR: MD5 mismatch"; exit 1
   fi
 else
-  echo "WARNING: MD5 file missing; skipping verification"
+  echo "WARNING: MD5 not found; continuing without verification"
 fi
 
-# Install AppImage to /usr/local/bin
-cp -f "$APPIMAGE_SRC" "$APPIMAGE_DST"
-chmod +x "$APPIMAGE_DST"
+echo "==> Installing to ${INSTALL_DIR}..."
+cp -f "$APPIMAGE_PATH" "${INSTALL_DIR}/${APPIMAGE_NAME}"
+chmod +x "${INSTALL_DIR}/${APPIMAGE_NAME}"
 
-# Create wrapper so 'clevis ...' Just Works™
-cat > "$WRAPPER" <<'WRAP'
+# Wrapper: make `clevis` command invoke the AppImage
+cat > "${INSTALL_DIR}/clevis" <<'WRAP'
 #!/bin/bash
 exec /usr/local/bin/Clevis-x86_64.AppImage "$@"
 WRAP
-chmod +x "$WRAPPER"
+chmod +x "${INSTALL_DIR}/clevis"
 
-# Convenience symlinks often expected by users/docs
-ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-bind"
-ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unbind"
-ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-list"
-ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unlock"
-ln -sf "$WRAPPER" "${INSTALL_DIR}/jose"
+# Convenience symlinks
+ln -sf "${INSTALL_DIR}/clevis" "${INSTALL_DIR}/clevis-luks-bind"
+ln -sf "${INSTALL_DIR}/clevis" "${INSTALL_DIR}/clevis-luks-unbind"
+ln -sf "${INSTALL_DIR}/clevis" "${INSTALL_DIR}/clevis-luks-list"
+ln -sf "${INSTALL_DIR}/clevis" "${INSTALL_DIR}/clevis-luks-unlock"
+ln -sf "${INSTALL_DIR}/clevis" "${INSTALL_DIR}/jose"
 
-echo "==> ${PLUGIN_NAME} installed successfully."
-echo
-echo "Try:"
-echo "  clevis --help"
-echo "  clevis luks bind -d /dev/sdX tang '{\"url\":\"http://tang-server:port\"}'"
-echo "  clevis luks unlock -d /dev/sdX -n my-disk"
+echo "==> Install complete. Try: clevis --help"
     ]]>
   </FILE>
 
-  <!-- Remove step -->
+  <!-- Uninstall -->
   <FILE Run="/bin/bash">
     <![CDATA[
 set -euo pipefail
-
-PLUGIN_NAME="&name;"
 INSTALL_DIR="/usr/local/bin"
-
-echo "==> Removing ${PLUGIN_NAME}..."
-
-# Remove binaries/symlinks
-rm -f "${INSTALL_DIR}/Clevis-x86_64.AppImage"
-rm -f "${INSTALL_DIR}/clevis"
-rm -f "${INSTALL_DIR}/clevis-luks-bind" \
+echo "==> Removing clevis..."
+rm -f "${INSTALL_DIR}/Clevis-x86_64.AppImage" \
+      "${INSTALL_DIR}/clevis" \
+      "${INSTALL_DIR}/clevis-luks-bind" \
       "${INSTALL_DIR}/clevis-luks-unbind" \
       "${INSTALL_DIR}/clevis-luks-list" \
       "${INSTALL_DIR}/clevis-luks-unlock" \
       "${INSTALL_DIR}/jose"
-
-# Remove cached files on flash
-rm -rf "/boot/config/plugins/${PLUGIN_NAME}"
-
-echo "==> ${PLUGIN_NAME} removed."
+rm -rf "/boot/config/plugins/clevis"
+echo "==> Removed."
     ]]>
   </FILE>
-
 </PLUGIN>
