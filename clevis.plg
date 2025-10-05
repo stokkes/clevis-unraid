@@ -1,87 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PLUGIN name="clevis"
         author="stokkes"
-        version="2025.10.04.6"
+        version="2025.10.04.7"
         pluginURL="https://raw.githubusercontent.com/stokkes/clevis-unraid/main/clevis.plg"
         support="https://github.com/stokkes/clevis-unraid"
         min="6.9.0">
 
   <CHANGES><![CDATA[
-2025.10.04.6
-- Stage files via <FILE URL> (Unraid downloads them) and then install.
-- Extra logging + fail-safe wrapper creation.
+2025.10.04.7
+- Write AppImage and wrapper directly to /usr/local/bin during install
+- Create symlinks in a small post-install step
   ]]></CHANGES>
 
-  <!-- Stage artifacts on flash so they persist -->
-  <FILE Name="/boot/config/plugins/clevis/Clevis-x86_64.AppImage">
+  <!-- Put the AppImage directly into /usr/local/bin -->
+  <FILE Name="/usr/local/bin/Clevis-x86_64.AppImage" Mode="0755">
     <URL>https://raw.githubusercontent.com/stokkes/clevis-unraid/main/Clevis-x86_64.AppImage</URL>
   </FILE>
 
-  <FILE Name="/boot/config/plugins/clevis/Clevis-x86_64.AppImage.md5">
-    <URL>https://raw.githubusercontent.com/stokkes/clevis-unraid/main/Clevis-x86_64.AppImage.md5</URL>
-  </FILE>
-
-  <!-- Install -->
-  <FILE Run="/bin/bash"><![CDATA[
-set -euo pipefail
-LOG="/var/log/clevis_plugin.log"
-exec > >(tee -a "$LOG") 2>&1
-
-CACHE="/boot/config/plugins/clevis"
-BIN="/usr/local/bin"
-APP="Clevis-x86_64.AppImage"
-APP_SRC="${CACHE}/${APP}"
-APP_DST="${BIN}/${APP}"
-MD5_SRC="${CACHE}/${APP}.md5"
-
-echo "==> clevis: starting install"
-
-# Sanity
-if [[ ! -s "$APP_SRC" ]]; then
-  echo "ERROR: AppImage missing at $APP_SRC"
-  exit 1
-fi
-
-# MD5 (best-effort)
-if [[ -s "$MD5_SRC" ]]; then
-  exp="$(awk '{print $1}' "$MD5_SRC")"
-  act="$(md5sum "$APP_SRC" | awk '{print $1}')"
-  if [[ "$exp" != "$act" ]]; then
-    echo "WARNING: MD5 mismatch (continuing): expected=$exp actual=$act"
-  else
-    echo "==> MD5 OK"
-  fi
-else
-  echo "==> No MD5 file found; skipping verification"
-fi
-
-# Install
-mkdir -p "$BIN"
-install -m 0755 "$APP_SRC" "$APP_DST"
-
-# Wrapper
-cat > "${BIN}/clevis" <<'WRAP'
+  <!-- Install the wrapper directly -->
+  <FILE Name="/usr/local/bin/clevis" Mode="0755"><![CDATA[
 #!/bin/bash
 exec /usr/local/bin/Clevis-x86_64.AppImage "$@"
-WRAP
-chmod +x "${BIN}/clevis"
+]]></FILE>
 
-# Convenience symlinks
+  <!-- Post-install: add convenience symlinks -->
+  <FILE Run="/bin/bash"><![CDATA[
+set -euo pipefail
+BIN="/usr/local/bin"
 ln -sf "${BIN}/clevis" "${BIN}/clevis-luks-bind"
 ln -sf "${BIN}/clevis" "${BIN}/clevis-luks-unbind"
 ln -sf "${BIN}/clevis" "${BIN}/clevis-luks-list"
 ln -sf "${BIN}/clevis" "${BIN}/clevis-luks-unlock"
 ln -sf "${BIN}/clevis" "${BIN}/jose"
-
-echo "==> clevis: install complete"
-ls -l "${BIN}/clevis"* "${BIN}/${APP}" || true
+echo "clevis plugin: install complete"
+ls -l "${BIN}/clevis"* "${BIN}/Clevis-x86_64.AppImage" || true
   ]]></FILE>
 
-  <!-- Uninstall (runs only on removal) -->
+  <!-- Uninstall ONLY on removal -->
   <FILE Run="/bin/bash" Method="remove"><![CDATA[
 set -euo pipefail
 BIN="/usr/local/bin"
-echo "==> clevis: uninstalling"
 rm -f "${BIN}/Clevis-x86_64.AppImage" \
       "${BIN}/clevis" \
       "${BIN}/clevis-luks-bind" \
@@ -89,8 +47,7 @@ rm -f "${BIN}/Clevis-x86_64.AppImage" \
       "${BIN}/clevis-luks-list" \
       "${BIN}/clevis-luks-unlock" \
       "${BIN}/jose"
-rm -rf "/boot/config/plugins/clevis"
-echo "==> clevis: removed"
+echo "clevis plugin: removed"
   ]]></FILE>
 
 </PLUGIN>
