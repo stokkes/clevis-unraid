@@ -1,106 +1,126 @@
-<?xml version='1.0' standalone='yes'?>
+<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE PLUGIN [
-<!ENTITY name      "clevis">
-<!ENTITY author    "Stokkes">
-<!ENTITY version   "2025.10.04">
-<!ENTITY md5       "d10d0a8e53ef76421563f311a3ad6e86">
-<!ENTITY launch    "Settings/Clevis">
-<!ENTITY plugdir   "/boot/config/plugins/&name;">
-<!ENTITY github    "stokkes/clevis-unraid">
-<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/clevis.plg">
+  <!ENTITY name        "clevis">
+  <!ENTITY author      "stokkes">
+  <!ENTITY version     "2025.10.04">
+  <!ENTITY repo        "clevis-unraid">
+  <!ENTITY user        "stokkes">
+  <!ENTITY branch      "main">
+  <!ENTITY pluginURL   "https://raw.githubusercontent.com/&user;/&repo;/&branch;/clevis.plg">
+  <!ENTITY appimageURL "https://raw.githubusercontent.com/&user;/&repo;/&branch;/Clevis-x86_64.AppImage">
+  <!ENTITY md5URL      "https://raw.githubusercontent.com/&user;/&repo;/&branch;/Clevis-x86_64.AppImage.md5">
+  <!ENTITY readmeURL   "https://github.com/&user;/&repo;/blob/&branch;/README.md">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" min="6.9.0">
+<PLUGIN  name="&name;"
+         author="&author;"
+         version="&version;"
+         pluginURL="&pluginURL;"
+         support="&readmeURL;"
+         min="6.9.0"
+         max="">
 
-<CHANGES>
-###2025.10.04
-- Initial release
-- Clevis LUKS encryption framework
-- Includes clevis-luks-bind, unlock, unbind commands
-- Tang server support
-</CHANGES>
+  <CHANGES>
+    ### &version; - Initial release
+    - Installs Clevis AppImage and wrapper to /usr/local/bin
+    - Adds convenience symlinks for common clevis/jose commands
+  </CHANGES>
 
-<!--
-Clevis Plugin for Unraid
-Automated encryption framework for LUKS devices
--->
+  <!-- Stash files on the flash drive so they persist across reboots -->
+  <FILE Name="/boot/config/plugins/&name;/Clevis-x86_64.AppImage">
+    <URL>&appimageURL;</URL>
+  </FILE>
 
-<FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
-<URL>https://github.com/&github;/releases/download/&version;/Clevis-x86_64.AppImage</URL>
-<MD5>&md5;</MD5>
-</FILE>
+  <FILE Name="/boot/config/plugins/&name;/Clevis-x86_64.AppImage.md5">
+    <URL>&md5URL;</URL>
+  </FILE>
 
-<!--
-Install Script
--->
-<FILE Run="/bin/bash">
-<INLINE>
-#!/bin/bash
+  <!-- Install step -->
+  <FILE Run="/bin/bash">
+    <![CDATA[
+set -euo pipefail
 
-# Plugin variables
-PLUGIN_NAME="clevis"
-APPIMAGE="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage"
+PLUGIN_NAME="&name;"
+APPIMAGE_SRC="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage"
+MD5_SRC="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage.md5"
 INSTALL_DIR="/usr/local/bin"
+APPIMAGE_DST="${INSTALL_DIR}/Clevis-x86_64.AppImage"
 WRAPPER="${INSTALL_DIR}/clevis"
 
-echo "Installing Clevis..."
+echo "==> Installing ${PLUGIN_NAME}..."
 
-# Copy AppImage to system
-if [ -f "$APPIMAGE" ]; then
-    cp "$APPIMAGE" "${INSTALL_DIR}/Clevis-x86_64.AppImage"
-    chmod +x "${INSTALL_DIR}/Clevis-x86_64.AppImage"
-    echo "✓ Clevis AppImage installed"
-else
-    echo "✗ AppImage not found at $APPIMAGE"
+# Basic checks
+if [[ ! -s "$APPIMAGE_SRC" ]]; then
+  echo "ERROR: AppImage not found at $APPIMAGE_SRC"
+  exit 1
+fi
+if [[ -s "$MD5_SRC" ]]; then
+  echo "==> Verifying MD5..."
+  # md5 file typically contains "<md5sum>  <filename>"
+  # normalize: replace filename with our local path
+  SUM_EXPECTED="$(awk '{print $1}' "$MD5_SRC")"
+  SUM_ACTUAL="$(md5sum "$APPIMAGE_SRC" | awk '{print $1}')"
+  if [[ "$SUM_EXPECTED" != "$SUM_ACTUAL" ]]; then
+    echo "ERROR: MD5 mismatch for AppImage"
+    echo "Expected: $SUM_EXPECTED"
+    echo "Actual:   $SUM_ACTUAL"
     exit 1
+  fi
+else
+  echo "WARNING: MD5 file missing; skipping verification"
 fi
 
-# Create wrapper script
-cat &gt; "$WRAPPER" &lt;&lt;'WRAPPER_END'
+# Install AppImage to /usr/local/bin
+cp -f "$APPIMAGE_SRC" "$APPIMAGE_DST"
+chmod +x "$APPIMAGE_DST"
+
+# Create wrapper so 'clevis ...' Just Works™
+cat > "$WRAPPER" <<'WRAP'
 #!/bin/bash
 exec /usr/local/bin/Clevis-x86_64.AppImage "$@"
-WRAPPER_END
-
+WRAP
 chmod +x "$WRAPPER"
-echo "✓ Clevis wrapper created"
 
-# Create convenience symlinks for common commands
+# Convenience symlinks often expected by users/docs
 ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-bind"
-ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unlock"
 ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unbind"
 ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-list"
+ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unlock"
 ln -sf "$WRAPPER" "${INSTALL_DIR}/jose"
 
-echo "✓ Clevis installed successfully"
-echo ""
-echo "Usage:"
+echo "==> ${PLUGIN_NAME} installed successfully."
+echo
+echo "Try:"
 echo "  clevis --help"
 echo "  clevis luks bind -d /dev/sdX tang '{\"url\":\"http://tang-server:port\"}'"
-echo "  clevis luks unlock -d /dev/sdX -n unlocked-disk"
-echo ""
-</INLINE>
-</FILE>
+echo "  clevis luks unlock -d /dev/sdX -n my-disk"
+    ]]>
+  </FILE>
 
-<!--
-Remove Script
--->
-<FILE Run="/bin/bash" Method="remove">
-<INLINE>
-#!/bin/bash
+  <!-- Remove step -->
+  <FILE Run="/bin/bash">
+    <![CDATA[
+set -euo pipefail
 
-echo "Removing Clevis..."
+PLUGIN_NAME="&name;"
+INSTALL_DIR="/usr/local/bin"
 
-# Remove binaries
-rm -f /usr/local/bin/Clevis-x86_64.AppImage
-rm -f /usr/local/bin/clevis
-rm -f /usr/local/bin/clevis-luks-*
-rm -f /usr/local/bin/jose
+echo "==> Removing ${PLUGIN_NAME}..."
 
-# Remove plugin directory
-rm -rf /boot/config/plugins/clevis
+# Remove binaries/symlinks
+rm -f "${INSTALL_DIR}/Clevis-x86_64.AppImage"
+rm -f "${INSTALL_DIR}/clevis"
+rm -f "${INSTALL_DIR}/clevis-luks-bind" \
+      "${INSTALL_DIR}/clevis-luks-unbind" \
+      "${INSTALL_DIR}/clevis-luks-list" \
+      "${INSTALL_DIR}/clevis-luks-unlock" \
+      "${INSTALL_DIR}/jose"
 
-echo "✓ Clevis removed"
-</INLINE>
-</FILE>
+# Remove cached files on flash
+rm -rf "/boot/config/plugins/${PLUGIN_NAME}"
+
+echo "==> ${PLUGIN_NAME} removed."
+    ]]>
+  </FILE>
 
 </PLUGIN>
