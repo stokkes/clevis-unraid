@@ -1,0 +1,106 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "clevis">
+<!ENTITY author    "Stokkes">
+<!ENTITY version   "2025.10.04">
+<!ENTITY md5       "d10d0a8e53ef76421563f311a3ad6e86">
+<!ENTITY launch    "Settings/Clevis">
+<!ENTITY plugdir   "/boot/config/plugins/&name;">
+<!ENTITY github    "stokkes/clevis-unraid">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/master/clevis.plg">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" min="6.9.0">
+
+<CHANGES>
+###2025.10.04
+- Initial release
+- Clevis LUKS encryption framework
+- Includes clevis-luks-bind, unlock, unbind commands
+- Tang server support
+</CHANGES>
+
+<!--
+Clevis Plugin for Unraid
+Automated encryption framework for LUKS devices
+-->
+
+<FILE Name="/boot/config/plugins/&name;/&name;-&version;.txz" Run="upgradepkg --install-new">
+<URL>https://github.com/&github;/releases/download/&version;/Clevis-x86_64.AppImage</URL>
+<MD5>&md5;</MD5>
+</FILE>
+
+<!--
+Install Script
+-->
+<FILE Run="/bin/bash">
+<INLINE>
+#!/bin/bash
+
+# Plugin variables
+PLUGIN_NAME="clevis"
+APPIMAGE="/boot/config/plugins/${PLUGIN_NAME}/Clevis-x86_64.AppImage"
+INSTALL_DIR="/usr/local/bin"
+WRAPPER="${INSTALL_DIR}/clevis"
+
+echo "Installing Clevis..."
+
+# Copy AppImage to system
+if [ -f "$APPIMAGE" ]; then
+    cp "$APPIMAGE" "${INSTALL_DIR}/Clevis-x86_64.AppImage"
+    chmod +x "${INSTALL_DIR}/Clevis-x86_64.AppImage"
+    echo "✓ Clevis AppImage installed"
+else
+    echo "✗ AppImage not found at $APPIMAGE"
+    exit 1
+fi
+
+# Create wrapper script
+cat &gt; "$WRAPPER" &lt;&lt;'WRAPPER_END'
+#!/bin/bash
+exec /usr/local/bin/Clevis-x86_64.AppImage "$@"
+WRAPPER_END
+
+chmod +x "$WRAPPER"
+echo "✓ Clevis wrapper created"
+
+# Create convenience symlinks for common commands
+ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-bind"
+ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unlock"
+ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-unbind"
+ln -sf "$WRAPPER" "${INSTALL_DIR}/clevis-luks-list"
+ln -sf "$WRAPPER" "${INSTALL_DIR}/jose"
+
+echo "✓ Clevis installed successfully"
+echo ""
+echo "Usage:"
+echo "  clevis --help"
+echo "  clevis luks bind -d /dev/sdX tang '{\"url\":\"http://tang-server:port\"}'"
+echo "  clevis luks unlock -d /dev/sdX -n unlocked-disk"
+echo ""
+</INLINE>
+</FILE>
+
+<!--
+Remove Script
+-->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+#!/bin/bash
+
+echo "Removing Clevis..."
+
+# Remove binaries
+rm -f /usr/local/bin/Clevis-x86_64.AppImage
+rm -f /usr/local/bin/clevis
+rm -f /usr/local/bin/clevis-luks-*
+rm -f /usr/local/bin/jose
+
+# Remove plugin directory
+rm -rf /boot/config/plugins/clevis
+
+echo "✓ Clevis removed"
+</INLINE>
+</FILE>
+
+</PLUGIN>
