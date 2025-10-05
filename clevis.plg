@@ -7,7 +7,7 @@
 <!ENTITY launch    "Settings/Clevis">
 <!ENTITY plugdir   "/boot/config/plugins/&name;">
 <!ENTITY github    "stokkes/clevis-unraid">
-<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/master/clevis.plg">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/&github;/main/clevis.plg">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" min="6.9.0">
